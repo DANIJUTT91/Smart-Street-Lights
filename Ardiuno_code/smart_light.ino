@@ -1,86 +1,85 @@
-#include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <ArduinoJson.h>
 
-const char *ssid = "Waince2";
-const char *password = "12341234";
+const char* ssid = "light";
+const char* password = "87654321";
 
-// Define the pin number for the built-in LED
-const int LED_PIN = 4;  
-const int LDR_PIN = A0;  
-int ldrValue ;
+int pirPin = 5;
+int ledPin = 4;
+int ldrPin = A0;
+ESP8266WebServer server(80);
 
-// WiFiServer server(80);
-
+bool ledState = false;
+bool pirState = false;
+bool ldrState = false;
+String recieved = "null";
 void setup() {
-  Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);
+    pinMode(ledPin, OUTPUT);
+    pinMode(pirPin, INPUT);
+    pinMode(ldrPin, INPUT);
+    Serial.begin(9600);
+    Serial.print("Hello");
+    
+    WiFi.softAP(ssid, password);
+    Serial.println("Access Point Started");
 
-  WiFi.softAP(ssid, password);
+    // Define endpoints
+    server.on("/led", HTTP_POST, handleLed);
+    server.onNotFound(handleNotFound);
 
-//   // Connect to Wi-Fi
-//   Serial.println();
-//   Serial.print("Connecting to ");
-//   Serial.println(ssid);
-//   WiFi.begin(ssid, password);
-//   while (WiFi.status() != WL_CONNECTED) {
-//     delay(500);
-//     Serial.print(".");
-//   }
-//   Serial.println("");
-//   Serial.println("WiFi connected");
+    server.begin();
+    Serial.println("HTTP server started");
 
-//   // Start the server
-//   server.begin();
-//   Serial.println("Server started");
-
-//   // Print the IP address
-//   Serial.println(WiFi.localIP());
- 
 }
 
-void loop() {
-   int numClients = WiFi.softAPgetStationNum();
-  Serial.print("Number of connected clients: ");
-  Serial.println(numClients);
+void loop() {  
+  server.handleClient();
+  if(ledState){
+    digitalWrite(ledPin, HIGH);
+    Serial.println("ledStatus:  ON");
+  }
+  else if(pirState && digitalRead(pirPin)){
+    Serial.println("pirStatus:  ON");
+    digitalWrite(ledPin, HIGH);
+  }
 
-  delay(5000); // Check every 5 seconds
-
-//   // Check if a client has connected
-//   WiFiClient client = server.available();
-//   if (!client) {
-//     return;
-//   }
-
-//   // Wait until the client sends some data
-//   while (!client.available()) {
-//     delay(1);
-//   }
-
-//   // Read the first line of the request
-//   String request = client.readStringUntil('\r');
-//   Serial.println(request);
-//   client.flush();
-
-//   // Control the LED based on the request
-//   if (request.indexOf("/on") != -1) {
-//     digitalWrite(LED_PIN, HIGH);
-//   } else if (request.indexOf("/off") != -1) {
-//     digitalWrite(LED_PIN, LOW);
-//   }
+  else if(ldrState && digitalRead(ldrPin) <= 200){
+    Serial.println("ldrStatus:  ON");
+    digitalWrite(ledPin, HIGH);
+  }
+  else{
+    digitalWrite(ledPin, LOW);
+  }
+  int a = analogRead(ldrPin);
+  Serial.println(a);
 }
 
+void handleLed() {
+  
+    String message = "";
+    DynamicJsonDocument jsonBuffer(200);
+    
+    // Parse request
+    if (server.hasArg("plain")) {
+        message = server.arg("plain");
+        recieved = message;
+        Serial.println(message);
+        deserializeJson(jsonBuffer, message);
+        String ledStatus = jsonBuffer["led"]["status"];
+        String pirStatus = jsonBuffer["led"]["pir_status"];
+        String ldrStatus = jsonBuffer["led"]["ldr_status"];
 
- 
-  //  = analogRead(LDR_PIN);
-  // if(ldrValue > 1){
-  //   digitalWrite(LED_PIN,HIGH);
-  // } else{
-  //   digitalWrite(LldrValueED_PIN,LOW);
-  // }
-  // Serial.println(ldrValue);
+        ledState = (ledStatus == "ON");
+        pirState = (pirStatus == "ON");
+        ldrState = (ldrStatus == "ON");
 
-    // digitalWrite(LED_PIN,HIGH);
-  // delay(1000);
-  // digitalWrite(LED_PIN,LOW);
-  // delay(1000);
+        // Send response
+        server.send(200, "text/plain", "LED is now " + String(ledState ? "ON" : "OFF"));
+    } else {
+        server.send(400, "text/plain", "Bad Request");
+    }
+}
+void handleNotFound() {
+    server.send(404, "text/plain", "Not Found");
+}
